@@ -1,6 +1,11 @@
 import numpy as np
 
 def generate_data_uniform_plus_normal(n_in_1, n_in_2, n_out, dim=50, mean_c1=1, mean_c2=-1, radius=4, a_signal=8):
+    # TASK: extend this to K classes
+    # n_in could be a vector of length K
+    # mean_c could be a vector of length K
+    # Put a for loop inside this function
+    # Y_i \in {0, 1, ..., K}
     
     n = n_in_1 + n_in_2 + n_out
     assert (n>0)

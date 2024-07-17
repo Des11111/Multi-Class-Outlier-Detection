@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import copy
 import itertools
+from keras.optimizers import Adam
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
@@ -9,17 +10,13 @@ from tensorflow.keras.regularizers import l2
 from sklearn.utils.class_weight import compute_class_weight
 
 def train_deep_model(input_dim, X_train, y_train, epochs=10, batch_size=32):
-    model = Sequential([
-        Dense(128, activation='relu', input_shape=(input_dim,)),
-        Dropout(0.5),
-        Dense(64, activation='relu'),
-        Dropout(0.5),
-        Dense(1, activation='sigmoid')
-    ])
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+    model = Sequential()
+    model.add(Input(shape=(input_dim,)))  # Explicitly define the input layer
+    model.add(Dense(64, activation='relu'))
+    model.add(Dense(1, activation='sigmoid'))
+    model.compile(optimizer=Adam(), loss='binary_crossentropy', metrics=['accuracy'])
+    model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1)
     return model
-
 
 def compute_deep_pu_scores(K, dim, X_train, Y_train, X_cal, Y_cal, X_test_part1, X_test_part2,
                            train_model_fn, two_step=True, oneclass_classifier=None):

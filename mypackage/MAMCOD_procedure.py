@@ -33,20 +33,29 @@ def compute_standard_conformal_scores(X_train, Y_train, X_cal, Y_cal, X_test, cl
 
     return scores_cal, scores_test
 
-def compute_MAMCOD_conformal_pv(K, n_in_cal, scores_cal, scores_test):
+def compute_MAMCOD_conformal_pv(K, n_in_cal, scores_cal, scores_test, is_high_score_inlier = True):
     # Calculate cumulative sums of n_in_cal for indexing
     cum_n_in_cal = np.cumsum(np.concatenate(([0], n_in_cal)))
 
     # Initialize the pv_test matrix
     pv_test = np.zeros((scores_test.shape[0], K))
 
+    if is_high_score_inlier:
     # Compute conformal p-values
-    for k in range(K):
-        # Get the specific range from scores_cal
-        cal_scores_range = scores_cal[cum_n_in_cal[k]:cum_n_in_cal[k + 1], k]
+        for k in range(K):
+            # Get the specific range from scores_cal
+            cal_scores_range = scores_cal[cum_n_in_cal[k]:cum_n_in_cal[k + 1], k]
 
-        # Use broadcasting and vectorized operations to compute p-values
-        pv_test[:, k] = (np.sum(cal_scores_range > scores_test[:, k].reshape(-1, 1), axis=1) + 1) / (
+            # Use broadcasting and vectorized operations to compute p-values
+            pv_test[:, k] = (np.sum(cal_scores_range <= scores_test[:, k].reshape(-1, 1), axis=1) + 1) / (
+                        cal_scores_range.size + 1)
+    else:
+        for k in range(K):
+            # Get the specific range from scores_cal
+            cal_scores_range = scores_cal[cum_n_in_cal[k]:cum_n_in_cal[k + 1], k]
+
+            # Use broadcasting and vectorized operations to compute p-values
+            pv_test[:, k] = (np.sum(cal_scores_range > scores_test[:, k].reshape(-1, 1), axis=1) + 1) / (
                     cal_scores_range.size + 1)
 
     # Return the maximum of each row of pv_test

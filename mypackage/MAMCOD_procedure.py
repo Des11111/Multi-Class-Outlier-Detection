@@ -1,4 +1,5 @@
 import numpy as np
+from statsmodels.stats.multitest import multipletests
 
 def compute_standard_conformal_scores(X_train, Y_train, X_cal, Y_cal, X_test, classifier_callable=True):
     # Identify unique classes in the training labels
@@ -22,7 +23,6 @@ def compute_standard_conformal_scores(X_train, Y_train, X_cal, Y_cal, X_test, cl
         classifiers[cls] = clf
 
     # Step 2: Computing conformal scores for X_cal and X_test
-
     scores_cal = np.zeros((X_cal.shape[0], len(unique_classes)))
     scores_test = np.zeros((X_test.shape[0], len(unique_classes)))
 
@@ -32,7 +32,6 @@ def compute_standard_conformal_scores(X_train, Y_train, X_cal, Y_cal, X_test, cl
         scores_test[:, idx] = clf.decision_function(X_test)
 
     return scores_cal, scores_test
-
 
 def compute_MAMCOD_conformal_pv(K, n_in_cal, scores_cal, scores_test):
     # Calculate cumulative sums of n_in_cal for indexing
@@ -47,7 +46,7 @@ def compute_MAMCOD_conformal_pv(K, n_in_cal, scores_cal, scores_test):
         cal_scores_range = scores_cal[cum_n_in_cal[k]:cum_n_in_cal[k + 1], k]
 
         # Use broadcasting and vectorized operations to compute p-values
-        pv_test[:, k] = (np.sum(cal_scores_range <= scores_test[:, k].reshape(-1, 1), axis=1) + 1) / (
+        pv_test[:, k] = (np.sum(cal_scores_range > scores_test[:, k].reshape(-1, 1), axis=1) + 1) / (
                     cal_scores_range.size + 1)
 
     # Return the maximum of each row of pv_test
@@ -55,3 +54,21 @@ def compute_MAMCOD_conformal_pv(K, n_in_cal, scores_cal, scores_test):
 
     return max_pv_test
 
+
+def compute_fdr_power(MAMCOD_pv, Y_test_part2, alpha=0.05):
+    MAMCOD_pv = np.array(MAMCOD_pv)
+    Y_test_part2 = np.array(Y_test_part2)
+
+    # Apply BH procedure
+    reject, pvals_corrected, _, _ = multipletests(MAMCOD_pv, alpha=alpha, method='fdr_bh')
+
+    # Calculate FDR and Power
+    true_positives = (reject & (Y_test_part2 == 0)).sum()
+    false_positives = (reject & (Y_test_part2 != 0)).sum()
+    total_positives = reject.sum()
+    total_outliers = (Y_test_part2 == 0).sum()
+
+    fdr = false_positives / total_positives if total_positives > 0 else 0
+    power = true_positives / total_outliers if total_outliers > 0 else 0
+
+    return fdr, power

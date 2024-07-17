@@ -47,7 +47,6 @@ def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test_part1, X_test_pa
 
     return scores_cal, scores_test
 
-
 def compute_pu_scores_intersection_two_step(K, X_train, Y_train, X_cal, Y_cal, X_test_part1, X_test_part2,
                                                      binary_classifier, oneclass_classifier):
     # Scaling
@@ -84,6 +83,25 @@ def compute_pu_scores_intersection_two_step(K, X_train, Y_train, X_cal, Y_cal, X
     scores_test = binary_classifier.predict_proba(X_test_part2_scaled)[:, 1]
 
     return scores_cal, scores_test
+
+def prepare_pu_score_matrices(K, n_in_cal, n_test, scores_cal, scores_test):
+    # 1. Assertions to check the lengths of scores_cal and scores_test
+    assert len(scores_cal) == sum(n_in_cal), f"scores_cal length is {len(scores_cal)}, expected {sum(n_in_cal)}"
+    assert len(scores_test) == n_test, f"scores_test length is {len(scores_test)}, expected {n_test}"
+
+    # 2. Transform scores_cal into a n_in_cal * K matrix
+    scores_cal_mat = np.zeros((sum(n_in_cal), K))
+    cum_n_in_cal = np.cumsum([0] + n_in_cal)  # Cumulative sum to get start and end indices for each class
+    for k in range(K):
+        start = cum_n_in_cal[k]
+        end = cum_n_in_cal[k + 1]
+        scores_cal_mat[start:end, k] = scores_cal[start:end]
+
+    # 3. Transform scores_test into a n_test * K matrix
+    scores_test_mat = np.tile(scores_test.reshape(-1, 1), K)
+
+    # 4. Return scores_cal_mat and scores_test_mat
+    return scores_cal_mat, scores_test_mat
 
 def combine_proportions(prop_in_1_train, prop_in_1_cal, prop_in_1_test, prop_out):
     proportion_combinations = []

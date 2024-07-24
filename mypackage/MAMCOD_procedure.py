@@ -64,18 +64,18 @@ def compute_MAMCOD_conformal_pv(K, n_in_cal, scores_cal, scores_test, is_high_sc
     return max_pv_test
 
 
-def compute_fdr_power(MAMCOD_pv, Y_test_part2, alpha=0.05):
+def compute_fdr_power(MAMCOD_pv, Y_test, alpha=0.05):
     MAMCOD_pv = np.array(MAMCOD_pv)
-    Y_test_part2 = np.array(Y_test_part2)
+    Y_test = np.array(Y_test)
 
     # Apply BH procedure
     reject, pvals_corrected, _, _ = multipletests(MAMCOD_pv, alpha=alpha, method='fdr_bh')
 
     # Calculate FDR and Power
-    true_positives = (reject & (Y_test_part2 == 0)).sum()
-    false_positives = (reject & (Y_test_part2 != 0)).sum()
+    true_positives = (reject & (Y_test == 0)).sum()
+    false_positives = (reject & (Y_test != 0)).sum()
     total_positives = reject.sum()
-    total_outliers = (Y_test_part2 == 0).sum()
+    total_outliers = (Y_test == 0).sum()
 
     fdr = false_positives / total_positives if total_positives > 0 else 0
     power = true_positives / total_outliers if total_outliers > 0 else 0

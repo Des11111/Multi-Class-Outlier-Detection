@@ -5,13 +5,16 @@ from sklearn.mixture import GaussianMixture
 import itertools
 
 def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifier,
-                     oneclass_classifier=None, multi_step=True, X_test_part2=None,):
+                     oneclass_classifier=None, multi_step=True):
+
+    X_unlabeled = np.vstack((X_cal, X_test))
+
     # Scaling
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_cal_scaled = scaler.transform(X_cal)
     X_test_scaled = scaler.transform(X_test)
-    X_test_part2_scaled = scaler.transform(X_test_part2) if X_test_part2 is not None else None
+    X_unlabeled_scaled = scaler.transform(X_unlabeled)
 
     if multi_step:
         assert oneclass_classifier is not None, "One-class classifier must be provided for two-step or multi-step method"
@@ -19,102 +22,24 @@ def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifi
         # Step 1: Train one-class classifiers for each inlier type
         occ_list = [copy.deepcopy(oneclass_classifier) for _ in range(K)]
         for i in range(K):
-            X_train_scaled_i = X_train_scaled[Y_train == (i + 1)]
-            if len(X_train_scaled_i) > 0:
-                occ_list[i].fit(X_train_scaled_i)
+            X_train_i = X_train_scaled[Y_train == (i + 1)]
+            if len(X_train_i) > 0:
+                occ_list[i].fit(X_train_i)
 
         # Apply the one-class classifiers to the unlabeled data
-        pred_unlabeled_list = [occ.predict(X_test_scaled) for occ in occ_list]
+        pred_unlabeled_list = [occ.predict(X_unlabeled_scaled) for occ in occ_list]
 
         # Identify reliable negatives
         reliable_negatives_idx = np.where(np.all(np.array(pred_unlabeled_list) == -1, axis=0))[0]
-        X_reliable_negatives = X_test_scaled[reliable_negatives_idx]
+        X_reliable_negatives = X_unlabeled_scaled[reliable_negatives_idx]
 
         # Combine the positive samples with reliable negatives
         X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
         y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
     else:
         # Combine the positive samples with the mixed samples
-        X_combined = np.vstack((X_train_scaled, X_test_scaled))
-        y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_test_scaled))))
-
-    # Step 2: Train a binary classifier on the selected positives and reliable negatives
-    binary_classifier.fit(X_combined, y_combined)
-
-    # Predict probabilities
-    scores_cal = binary_classifier.predict_proba(X_cal_scaled)[:, 1]
-    scores_test = binary_classifier.predict_proba(X_test_part2_scaled)[:, 1] if X_test_part2 is not None else binary_classifier.predict_proba(X_test_scaled)[:, 1]
-
-    return scores_cal, scores_test, X_reliable_negatives if multi_step else None
-
-# def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifier,
-#                                 two_step=True, oneclass_classifier=None):
-#     # Scaling
-#     scaler = StandardScaler()
-#     X_train_scaled = scaler.fit_transform(X_train)
-#     X_cal_scaled = scaler.transform(X_cal)
-#     X_test_scaled = scaler.transform(X_test)
-#     if two_step:
-#         assert oneclass_classifier is not None, "One-class classifier must be provided for two-step method"
-#
-#         # Step 1: Train one-class classifiers for each inlier type
-#         occ_list = [copy.deepcopy(oneclass_classifier) for _ in range(K)]
-#         for i in range(K):
-#             X_train_scaled_i = X_train_scaled[Y_train == (i + 1)]
-#             if len(X_train_scaled_i) > 0:
-#                 occ_list[i].fit(X_train_scaled_i)
-#
-#         # Apply the one-class classifiers to the unlabeled data
-#         pred_unlabeled_list = [occ.predict(X_test_scaled) for occ in occ_list]
-#
-#         # Identify reliable negatives
-#         reliable_negatives_idx = np.where(np.all(np.array(pred_unlabeled_list) == -1, axis=0))[0]
-#         X_reliable_negatives = X_test_scaled[reliable_negatives_idx]
-#
-#         # Combine the positive samples with reliable negatives
-#         X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
-#         y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
-#
-#     else:
-#         # Combine the positive samples with the mixed samples
-#         X_combined = np.vstack((X_train_scaled, X_test_scaled))
-#         y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_test_scaled))))
-#
-#     # Step 2: Train a binary classifier on the selected positives and reliable negatives
-#     binary_classifier.fit(X_combined, y_combined)
-#
-#     # Predict probabilities
-#     scores_cal = binary_classifier.predict_proba(X_cal_scaled)[:, 1]
-#     scores_test = binary_classifier.predict_proba(X_test_scaled)[:, 1]
-#
-#     return scores_cal, scores_test
-
-def compute_pu_scores_multi_step(K, X_train, Y_train, X_cal, Y_cal, X_test,
-                                                     binary_classifier, oneclass_classifier):
-    # Scaling
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_cal_scaled = scaler.transform(X_cal)
-    X_test_scaled = scaler.transform(X_test)
-
-    # Step 1: Train a one-class SVM for each inlier type
-    occ_list = [copy.deepcopy(oneclass_classifier) for _ in range(K)]
-
-    for i in range(K):
-        X_train_scaled_i = X_train_scaled[np.where(Y_train == i + 1)[0]]
-        if len(X_train_scaled_i) > 0:
-            occ_list[i].fit(X_train_scaled_i)
-
-    # Apply the one-class SVMs to the unlabeled data
-    pred_unlabeled_list = [occ.predict(X_test_scaled) for occ in occ_list]
-
-    # Identify reliable negatives
-    reliable_negatives_idx = np.where(np.all(np.array(pred_unlabeled_list) == -1, axis=0))[0]
-    X_reliable_negatives = X_test_scaled[reliable_negatives_idx]
-
-    # Combine the positive samples with reliable negatives
-    X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
-    y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
+        X_combined = np.vstack((X_train_scaled, X_unlabeled_scaled))
+        y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_unlabeled_scaled))))
 
     # Step 2: Train a binary classifier on the selected positives and reliable negatives
     binary_classifier.fit(X_combined, y_combined)
@@ -123,45 +48,7 @@ def compute_pu_scores_multi_step(K, X_train, Y_train, X_cal, Y_cal, X_test,
     scores_cal = binary_classifier.predict_proba(X_cal_scaled)[:, 1]
     scores_test = binary_classifier.predict_proba(X_test_scaled)[:, 1]
 
-    return scores_cal, scores_test, X_reliable_negatives
-
-def compute_pu_scores_multi_step_twotest(K, X_train, Y_train, X_cal, Y_cal, X_test, X_test_part2,
-                                                     binary_classifier, oneclass_classifier):
-    # Scaling
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_cal_scaled = scaler.transform(X_cal)
-    X_test_scaled = scaler.transform(X_test)
-    X_test_part2_scaled = scaler.transform(X_test_part2)
-
-    # Step 1: Train a one-class SVM for each inlier type
-    occ_list = [copy.deepcopy(oneclass_classifier) for _ in range(K)]
-
-    for i in range(K):
-        X_train_scaled_i = X_train_scaled[np.where(Y_train == i + 1)[0]]
-        if len(X_train_scaled_i) > 0:
-            occ_list[i].fit(X_train_scaled_i)
-
-    # Apply the one-class SVMs to the unlabeled data
-    pred_unlabeled_list = [occ.predict(X_test_scaled) for occ in occ_list]
-
-    # Identify reliable negatives
-    reliable_negatives_idx = np.where(np.all(np.array(pred_unlabeled_list) == -1, axis=0))[0]
-    X_reliable_negatives = X_test_scaled[reliable_negatives_idx]
-
-    # Combine the positive samples with reliable negatives
-    X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
-    y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
-
-    # Step 2: Train a binary classifier on the selected positives and reliable negatives
-    binary_classifier.fit(X_combined, y_combined)
-
-    # Predict probabilities
-    scores_cal = binary_classifier.predict_proba(X_cal_scaled)[:, 1]
-    scores_test = binary_classifier.predict_proba(X_test_part2_scaled)[:, 1]
-
-    return scores_cal, scores_test, X_reliable_negatives
-
+    return scores_cal, scores_test, X_reliable_negatives if multi_step else None
 
 def prepare_pu_score_matrices(K, n_in_cal, n_test, scores_cal, scores_test):
     # 1. Assertions to check the lengths of scores_cal and scores_test
@@ -221,20 +108,75 @@ def compute_mean_distance(K,scores_test, Y_test):
         mean_distance = np.abs(outliers[:, None] - inliers).mean()
         if mean_distance < min_mean_distance:
             min_mean_distance = mean_distance
+    min_mean_distance = min_mean_distance - np.abs(1 - outliers[:, None]).mean()
     return min_mean_distance
 
+def estimate_test_proportions(X_train, Y_train, X_unlabeled, oneclass_classifier, K):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_unlabeled_scaled = scaler.transform(X_unlabeled)
 
-def em_adjust_proportions(K, X_test, num_n_in_train, num_em_iterations):
-    # Initial proportions
-    pi_k = np.array([1/K] * K)  # Initial guess for the proportions of inliers
+    # Train one-class classifiers for each inlier type
+    occ_list = [copy.deepcopy(oneclass_classifier) for _ in range(K)]
+    for i in range(K):
+        X_train_i = X_train_scaled[Y_train == (i + 1)]
+        if len(X_train_i) > 0:
+            occ_list[i].fit(X_train_i)
 
-    for _ in range(num_em_iterations):  # EM iterations
-        # E-step: Estimate responsibilities
-        gmm = GaussianMixture(n_components=K, weights_init=pi_k)
-        gmm.fit(X_test)
-        responsibilities = gmm.predict_proba(X_test)
+    # Predict inlier types in the unlabeled data
+    pred_unlabeled_list = [occ.predict(X_unlabeled_scaled) for occ in occ_list]
 
-        # M-step: Update proportions
-        n_in_train = [int(np.sum(responsibilities[:, k]) * num_n_in_train / X_test.shape[0]) for k in range(K)]
+    # Estimate proportions of inliers in the test set
+    estimated_proportions = np.mean(np.array(pred_unlabeled_list) == 1, axis=1)
+    return estimated_proportions
 
-    return n_in_train
+def subsample_training_data(X_train, Y_train, target_proportions):
+    available_populations = [np.sum(Y_train == (i + 1)) for i in range(len(target_proportions))]
+    target_sizes = [int(target_proportions[i] * len(Y_train)) for i in range(len(target_proportions))]
+
+    # Scale down target sizes proportionally if any target size exceeds the available population
+    scaling_factor = min(1.0, min(available_populations[i] / target_sizes[i] for i in range(len(target_sizes)) if target_sizes[i] > 0))
+    scaled_target_sizes = [int(scaling_factor * target_sizes[i]) for i in range(len(target_sizes))]
+
+    subsampled_X_train = []
+    subsampled_Y_train = []
+
+    for i in range(len(scaled_target_sizes)):
+        inlier_indices = np.where(Y_train == (i + 1))[0]
+        subsampled_indices = np.random.choice(inlier_indices, scaled_target_sizes[i], replace=False)
+        subsampled_X_train.append(X_train[subsampled_indices])
+        subsampled_Y_train.append(Y_train[subsampled_indices])
+
+    return np.vstack(subsampled_X_train), np.hstack(subsampled_Y_train)
+
+
+def bootstrap_training_data(X_train, Y_train, target_proportions):
+    bootstrapped_X_train = []
+    bootstrapped_Y_train = []
+
+    for i in range(len(target_proportions)):
+        inlier_indices = np.where(Y_train == (i + 1))[0]
+        target_size = int(target_proportions[i] * len(Y_train))
+        bootstrapped_indices = np.random.choice(inlier_indices, target_size, replace=True)
+        bootstrapped_X_train.append(X_train[bootstrapped_indices])
+        bootstrapped_Y_train.append(Y_train[bootstrapped_indices])
+
+    return np.vstack(bootstrapped_X_train), np.hstack(bootstrapped_Y_train)
+
+
+def adjust_proportions(X_train, Y_train, X_cal, X_test, oneclass_classifier, K, method='subsample'):
+    X_unlabeled = np.vstack((X_cal, X_test))
+
+    # Estimate test proportions
+    estimated_proportions = estimate_test_proportions(X_train, Y_train, X_unlabeled, oneclass_classifier, K)
+
+    if method == 'subsample':
+        X_train_adjusted, Y_train_adjusted = subsample_training_data(X_train, Y_train,
+                                                                            estimated_proportions)
+    elif method == 'bootstrap':
+        X_train_adjusted, Y_train_adjusted = bootstrap_training_data(X_train, Y_train,
+                                                                            estimated_proportions)
+    else:
+        raise ValueError("Method should be either 'subsample' or 'bootstrap'")
+
+    return X_train_adjusted, Y_train_adjusted

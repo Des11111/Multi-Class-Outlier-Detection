@@ -63,8 +63,7 @@ def compute_MAMCOD_conformal_pv(K, n_in_cal, scores_cal, scores_test, is_high_sc
 
     return max_pv_test
 
-
-def compute_fdr_power(MAMCOD_pv, Y_test, alpha=0.05):
+def compute_fdr_power(MAMCOD_pv, Y_test, alpha=0.10):
     MAMCOD_pv = np.array(MAMCOD_pv)
     Y_test = np.array(Y_test)
 

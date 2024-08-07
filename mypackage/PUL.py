@@ -4,8 +4,7 @@ import copy
 from sklearn.mixture import GaussianMixture
 import itertools
 
-def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifier,
-                     oneclass_classifier=None, multi_step=True):
+def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifier, occ_list = None, multi_step=True):
 
     X_unlabeled = np.vstack((X_cal, X_test))
 
@@ -17,20 +16,20 @@ def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifi
     X_unlabeled_scaled = scaler.transform(X_unlabeled)
 
     if multi_step:
-        assert oneclass_classifier is not None, "One-class classifier must be provided for two-step or multi-step method"
+        assert occ_list is not None, "One-class classifier must be provided for two-step or multi-step method"
 
-        # Step 1: Train one-class classifiers for each inlier type
-        occ_list = [copy.deepcopy(oneclass_classifier) for _ in range(K)]
-        for i in range(K):
-            X_train_i = X_train_scaled[Y_train == (i + 1)]
-            if len(X_train_i) > 0:
-                occ_list[i].fit(X_train_i)
-
-        # Apply the one-class classifiers to the unlabeled data
-        pred_unlabeled_list = [occ.predict(X_unlabeled_scaled) for occ in occ_list]
+        # Step 1: Apply the one-class classifiers to the unlabeled data
+        pred_unlabeled_list = []
+        for occ in occ_list:
+            if occ is not None:
+                pred_unlabeled_list.append(occ.predict(X_unlabeled_scaled))
+            else:
+                # For absent classifiers, assume all predictions are -1
+                pred_unlabeled_list.append(np.full(X_unlabeled_scaled.shape[0], -1))
 
         # Identify reliable negatives
-        reliable_negatives_idx = np.where(np.all(np.array(pred_unlabeled_list) == -1, axis=0))[0]
+        pred_unlabeled_array = np.array(pred_unlabeled_list)
+        reliable_negatives_idx = np.where(np.all(pred_unlabeled_array == -1, axis=0))[0]
         X_reliable_negatives = X_unlabeled_scaled[reliable_negatives_idx]
 
         # Combine the positive samples with reliable negatives

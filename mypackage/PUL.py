@@ -1,21 +1,20 @@
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import copy
-from sklearn.mixture import GaussianMixture
-import itertools
+from mypackage.MAMCOD_procedure import train_occ, scale_data
 
-def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifier, occ_list = None, multi_step=True):
+
+def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifier, occ_list = None, occ = None, num_steps= 'multi_step'):
 
     X_unlabeled = np.vstack((X_cal, X_test))
 
     # Scaling
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_cal_scaled = scaler.transform(X_cal)
-    X_test_scaled = scaler.transform(X_test)
-    X_unlabeled_scaled = scaler.transform(X_unlabeled)
+    X_train_scaled = scale_data(X_train, X_train)
+    X_cal_scaled = scale_data(X_train, X_cal)
+    X_unlabeled_scaled = scale_data(X_train, X_unlabeled)
+    X_test_scaled = scale_data(X_train, X_test)
 
-    if multi_step:
+    if num_steps == 'multi_step':
         assert occ_list is not None, "One-class classifier must be provided for two-step or multi-step method"
 
         # Step 1: Apply the one-class classifiers to the unlabeled data
@@ -35,7 +34,24 @@ def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifi
         # Combine the positive samples with reliable negatives
         X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
         y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
-    else:
+
+    elif num_steps == 'two_step':
+        assert occ is not None, "occ must be provided for two-step or multi-step method"
+
+        # Step 1: Apply the one-class classifiers to the unlabeled data
+        occ.fit(X_train_scaled)
+        pred_unlabeled_list = occ.predict(X_unlabeled_scaled)
+
+        # Identify reliable negatives
+        pred_unlabeled_array = np.array(pred_unlabeled_list)
+        reliable_negatives_idx = np.where(pred_unlabeled_array == -1)[0]
+        X_reliable_negatives = X_unlabeled_scaled[reliable_negatives_idx]
+
+        # Combine the positive samples with reliable negatives
+        X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
+        y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
+
+    elif num_steps == 'one_step':
         # Combine the positive samples with the mixed samples
         X_combined = np.vstack((X_train_scaled, X_unlabeled_scaled))
         y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_unlabeled_scaled))))
@@ -47,7 +63,70 @@ def compute_pu_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifi
     scores_cal = binary_classifier.predict_proba(X_cal_scaled)[:, 1]
     scores_test = binary_classifier.predict_proba(X_test_scaled)[:, 1]
 
-    return scores_cal, scores_test, X_reliable_negatives if multi_step else None
+    return scores_cal, scores_test
+
+
+def compute_pu_scores_neg(K, X_train, Y_train, X_cal, Y_cal, X_test, binary_classifier, occ_list = None, occ = None, num_steps= 'multi_step'):
+
+    X_unlabeled = np.vstack((X_cal, X_test))
+
+    # Scaling
+    X_train_scaled = scale_data(X_train, X_train)
+    X_cal_scaled = scale_data(X_train, X_cal)
+    X_unlabeled_scaled = scale_data(X_train, X_unlabeled)
+    X_test_scaled = scale_data(X_train, X_test)
+
+    if num_steps == 'multi_step':
+        assert occ_list is not None, "One-class classifier must be provided for two-step or multi-step method"
+
+        # Step 1: Apply the one-class classifiers to the unlabeled data
+        pred_unlabeled_list = []
+        for occ in occ_list:
+            if occ is not None:
+                pred_unlabeled_list.append(occ.predict(X_unlabeled_scaled))
+            else:
+                # For absent classifiers, assume all predictions are -1
+                pred_unlabeled_list.append(np.full(X_unlabeled_scaled.shape[0], -1))
+
+        # Identify reliable negatives
+        pred_unlabeled_array = np.array(pred_unlabeled_list)
+        reliable_negatives_idx = np.where(np.all(pred_unlabeled_array == -1, axis=0))[0]
+        X_reliable_negatives = X_unlabeled_scaled[reliable_negatives_idx]
+
+        # Combine the positive samples with reliable negatives
+        X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
+        y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
+
+    elif num_steps == 'two_step':
+        assert occ is not None, "occ must be provided for two-step or multi-step method"
+
+        # Step 1: Apply the one-class classifiers to the unlabeled data
+        occ.fit(X_train_scaled)
+        pred_unlabeled_list = occ.predict(X_unlabeled_scaled)
+
+        # Identify reliable negatives
+        pred_unlabeled_array = np.array(pred_unlabeled_list)
+        reliable_negatives_idx = np.where(pred_unlabeled_array == -1)[0]
+        X_reliable_negatives = X_unlabeled_scaled[reliable_negatives_idx]
+
+        # Combine the positive samples with reliable negatives
+        X_combined = np.vstack((X_train_scaled, X_reliable_negatives))
+        y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_reliable_negatives))))
+
+    elif num_steps == 'one_step':
+        # Combine the positive samples with the mixed samples
+        X_combined = np.vstack((X_train_scaled, X_unlabeled_scaled))
+        y_combined = np.hstack((np.zeros(len(X_train_scaled)), np.ones(len(X_unlabeled_scaled))))
+
+    # Step 2: Train a binary classifier on the selected positives and reliable negatives
+    binary_classifier.fit(X_combined, y_combined)
+
+    # Predict probabilities
+    scores_cal = binary_classifier.predict_proba(X_cal_scaled)[:, 1]
+    scores_test = binary_classifier.predict_proba(X_test_scaled)[:, 1]
+
+    return scores_cal, scores_test, reliable_negatives_idx
+
 
 def prepare_pu_score_matrices(K, n_in_cal, n_test, scores_cal, scores_test):
     # 1. Assertions to check the lengths of scores_cal and scores_test

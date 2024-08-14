@@ -1,35 +1,42 @@
 import numpy as np
 from statsmodels.stats.multitest import multipletests
+import copy
+from sklearn.preprocessing import StandardScaler
 
-def compute_standard_conformal_scores(X_train, Y_train, X_cal, Y_cal, X_test, classifier_callable=True):
-    # Identify unique classes in the training labels
-    unique_classes = np.unique(Y_train)
+def train_occ(K, X_train, Y_train, oneclass_classifier):
+    # In some cases X_train has to be scaled
+    occ_list = [copy.deepcopy(oneclass_classifier) for _ in range(K)]
+    for i in range(K):
+        X_train_i = X_train[Y_train == (i + 1)]
+        if len(X_train_i) > 0:
+            occ_list[i].fit(X_train_i)
+        else:
+            occ_list[i] = None
+    return occ_list
 
-    # Dictionary to store classifiers for each class
-    classifiers = {}
+def scale_data(X_train, X_external):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_external_scaled = scaler.transform(X_external)
+    return X_external_scaled
+
+def compute_standard_conformal_scores(K, X_train, Y_train, X_cal, Y_cal, X_test, oneclass_classifier):
+
+    # Scaling
+    X_train_scaled = scale_data(X_train, X_train)
+    X_cal_scaled = scale_data(X_train, X_cal)
+    X_test_scaled = scale_data(X_train, X_test)
 
     # Step 1: Train a one-class classifier on each type of inliers separately
-    for cls in unique_classes:
-        # Select data points belonging to the current class
-        X_train_cls = X_train[Y_train == cls]
-
-        # Create a new instance of the classifier for each class
-        clf = classifier_callable()
-
-        # Fit the classifier on the current class data
-        clf.fit(X_train_cls)
-
-        # Store the trained classifier
-        classifiers[cls] = clf
+    occ_list = train_occ(K, X_train_scaled, Y_train, oneclass_classifier)
 
     # Step 2: Computing conformal scores for X_cal and X_test
-    scores_cal = np.zeros((X_cal.shape[0], len(unique_classes)))
-    scores_test = np.zeros((X_test.shape[0], len(unique_classes)))
+    scores_cal = np.zeros((X_cal_scaled.shape[0], K))
+    scores_test = np.zeros((X_test_scaled.shape[0], K))
 
-    for idx, cls in enumerate(unique_classes):
-        clf = classifiers[cls]
-        scores_cal[:, idx] = clf.decision_function(X_cal)
-        scores_test[:, idx] = clf.decision_function(X_test)
+    for idx in range(K):
+        scores_cal[:, idx] =  occ_list[idx].score_samples(X_cal_scaled)
+        scores_test[:, idx] = occ_list[idx].score_samples(X_test_scaled)
 
     return scores_cal, scores_test
 
